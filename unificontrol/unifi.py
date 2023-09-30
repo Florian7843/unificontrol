@@ -186,7 +186,7 @@ class UnifiClient(metaclass=MetaNameFixer):
         )
 
     logout = UnifiAPICallNoSite(
-        "Log out from Unifi controller", "logout", need_login=False
+        "Log out from Unifi controller", "auth/logout", need_login=False, prefix=""
     )
 
     # Functions for dealing with guest and client devices
