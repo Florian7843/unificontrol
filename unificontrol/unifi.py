@@ -136,10 +136,12 @@ class UnifiClient(metaclass=MetaNameFixer):
             response = resp.json()
             if "meta" in response and response["meta"]["rc"] != "ok":
                 raise UnifiAPIError(response["meta"]["msg"])
-            print(response)
+            print(response)  # TODO: REMOVE
             return response
         else:
-            raise UnifiTransportError("{}: {}".format(resp.status_code, resp.reason))
+            raise UnifiTransportError(
+                "{}: {} - {}".format(resp.status_code, resp.reason, resp.text)
+            )
 
     @property
     def host(self):
