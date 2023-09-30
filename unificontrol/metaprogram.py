@@ -131,6 +131,7 @@ class _UnifiAPICall:
             for fix in self._fixes:
                 rest_dict = fix(rest_dict)
         url = self._build_url(client, path_arg)
+        print(f"requesting {url}")
         return client._execute(
             url, self._method, rest_dict, need_login=self._need_login
         )
