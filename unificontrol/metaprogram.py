@@ -14,8 +14,10 @@ KEYWORD_ONLY = Parameter.KEYWORD_ONLY
 
 META_RENAME = "__TO_BE_RENAMED_LATER__"
 
+
 class MetaNameFixer(type):
     "A metaclass to fix attribute introspection names"
+
     def __init__(cls, name, bases, dct):
         for attr_name in dct:
             attr = dct[attr_name]
@@ -23,16 +25,27 @@ class MetaNameFixer(type):
                 attr.__name__ = attr_name
         super(MetaNameFixer, cls).__init__(name, bases, dct)
 
+
 # These are classes who's instances represent API calls to the Unifi controller
 class _UnifiAPICall:
     # pylint: disable=too-many-instance-attributes, too-many-arguments
     # pylint: disable=too-few-public-methods, protected-access
     "A representation of a single API call in a specific site"
-    def __init__(self, doc, endpoint,
-                 path_arg_name=None, path_arg_optional=True,
-                 json_args=None, json_body_name=None, json_fix=None,
-                 rest_command=None, method=None,
-                 need_login=True):
+
+    def __init__(
+        self,
+        doc,
+        endpoint,
+        path_arg_name=None,
+        path_arg_optional=True,
+        json_args=None,
+        json_body_name=None,
+        json_fix=None,
+        rest_command=None,
+        method=None,
+        need_login=True,
+        prefix="/proxy/network",
+    ):
         self._endpoint = endpoint
         self._path_arg_name = path_arg_name
         self._json_args = json_args
@@ -43,14 +56,20 @@ class _UnifiAPICall:
             json_fix = [json_fix]
         self._fixes = json_fix
         self.__doc__ = doc
+        self._prefix = prefix
 
-        args = [Parameter('self', POSITIONAL_ONLY)]
+        args = [Parameter("self", POSITIONAL_ONLY)]
         if path_arg_name:
-            args.append(Parameter(path_arg_name, POSITIONAL_OR_KEYWORD,
-                                  default=None if path_arg_optional else Parameter.empty))
+            args.append(
+                Parameter(
+                    path_arg_name,
+                    POSITIONAL_OR_KEYWORD,
+                    default=None if path_arg_optional else Parameter.empty,
+                )
+            )
 
         if json_args:
-            json_args.sort(key=lambda x:isinstance(x,tuple))
+            json_args.sort(key=lambda x: isinstance(x, tuple))
             for arg_name in json_args:
                 if isinstance(arg_name, tuple):
                     arg_name, default = arg_name
@@ -58,9 +77,15 @@ class _UnifiAPICall:
                     default = Parameter.empty
                 args.append(Parameter(arg_name, POSITIONAL_OR_KEYWORD, default=default))
         if json_body_name:
-            args.append(Parameter(json_body_name,
-                                  POSITIONAL_OR_KEYWORD if path_arg_optional else POSITIONAL_OR_KEYWORD,
-                                  default=None))
+            args.append(
+                Parameter(
+                    json_body_name,
+                    POSITIONAL_OR_KEYWORD
+                    if path_arg_optional
+                    else POSITIONAL_OR_KEYWORD,
+                    default=None,
+                )
+            )
 
         self.call_sig = Signature(args)
         if method is None:
@@ -74,10 +99,14 @@ class _UnifiAPICall:
     def _build_url(self, client, path_arg):
         if not client.site:
             raise UnifiAPIError("No site specified for site-specific call")
-        return "https://{host}:{port}/api/s/{site}/{endpoint}{path}".format(
-            host=client.host, port=client.port, site=client.site,
+        return "https://{host}:{port}{prefix}/api/s/{site}/{endpoint}{path}".format(
+            host=client.host,
+            port=client.port,
+            site=client.site,
+            prefix=self._prefix,
             endpoint=self._endpoint,
-            path="/" + path_arg if path_arg else "")
+            path="/" + path_arg if path_arg else "",
+        )
 
     def __call__(self, *args, **kwargs):
         bound = self.call_sig.bind(*args, **kwargs)
@@ -85,7 +114,9 @@ class _UnifiAPICall:
         # The first parameter is the 'self' of the API class to which it is attached
         client = bound.arguments["self"]
         path_arg = bound.arguments[self._path_arg_name] if self._path_arg_name else None
-        rest_dict = bound.arguments[self._json_body_name] if self._json_body_name else {}
+        rest_dict = (
+            bound.arguments[self._json_body_name] if self._json_body_name else {}
+        )
         if self._rest:
             rest_dict["cmd"] = self._rest
         if self._json_args:
@@ -100,38 +131,55 @@ class _UnifiAPICall:
             for fix in self._fixes:
                 rest_dict = fix(rest_dict)
         url = self._build_url(client, path_arg)
-        return client._execute(url, self._method, rest_dict, need_login=self._need_login)
+        return client._execute(
+            url, self._method, rest_dict, need_login=self._need_login
+        )
+
 
 class _UnifiAPICallNoSite(_UnifiAPICall):
     # pylint: disable=too-few-public-methods
     "A representation of a single API call common to all sites"
+
     def _build_url(self, client, path_arg):
-        endpoint= self._endpoint if self._endpoint.startswith('/') else '/api/' + self._endpoint
-        return "https://{host}:{port}{endpoint}{path}".format(
-            host=client.host, port=client.port,
+        endpoint = (
+            self._endpoint
+            if self._endpoint.startswith("/")
+            else "/api/" + self._endpoint
+        )
+        return "https://{host}:{port}{prefix}{endpoint}{path}".format(
+            host=client.host,
+            port=client.port,
+            prefix=self._prefix
             endpoint=endpoint,
-            path="/" + path_arg if path_arg else "")
+            path="/" + path_arg if path_arg else "",
+        )
+
 
 # We want to have proper introspection and documentation for our
 # methods but for some reason we you can't set a __signature__
 # directly on a bound method. Instead we wrap it up and fix the
 # signature on the wrapper.
 
+
 def _make_wrapper(cls, *args, **kwargs):
     """Wrap a call to an instance of an obbject"""
     instance = cls(*args, **kwargs)
+
     def wrapper(client, *a, **kw):
         # pylint: disable=missing-docstring
         return instance(client, *a, **kw)
+
     wrapper.__name__ = META_RENAME
     wrapper.__doc__ = instance.__doc__
     wrapper.__signature__ = instance.call_sig
     return wrapper
 
+
 def UnifiAPICall(*args, **kwargs):
     # pylint: disable=invalid-name
     """Make a site-specific API call method"""
     return _make_wrapper(_UnifiAPICall, *args, **kwargs)
+
 
 def UnifiAPICallNoSite(*args, **kwargs):
     # pylint: disable=invalid-name
