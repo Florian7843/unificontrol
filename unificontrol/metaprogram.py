@@ -149,7 +149,7 @@ class _UnifiAPICallNoSite(_UnifiAPICall):
         return "https://{host}:{port}{prefix}{endpoint}{path}".format(
             host=client.host,
             port=client.port,
-            prefix=self._prefix
+            prefix=self._prefix,
             endpoint=endpoint,
             path="/" + path_arg if path_arg else "",
         )
